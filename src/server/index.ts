@@ -14,11 +14,41 @@ app.use(express.text());
 
 const router = express.Router();
 
-async function increaseXP(username: string, xp: number): Promise<void> {
-  await redis.incrBy(`xp:${username}`, xp);
+const NORMAL_XP = 50;
+const FIRST_XP = 250;
+
+export async function update_xp(username: string, delta: number) {
+  const new_xp = await redis.zIncrBy("leaderboard:xp", username, delta);
+  return Number(new_xp);
 }
 
-async function getFragment(username: string){
+export async function get_xp(username: string) {
+  const xp = await redis.zScore("leaderboard:xp", username);
+  return xp ? Number(xp) : 0;
+}
+
+export async function get_leaderboard_top10() {
+  const all = await redis.zRange("leaderboard:xp", 0, -1);
+
+  const formatted = all
+    .sort((a, b) => b.score - a.score) // descending
+    .slice(0, 10)
+    .map(e => ({ username: e.member, xp: e.score }));
+
+  return formatted;
+}
+
+export async function get_user_rank(username: string) {
+  const total = await redis.zCard("leaderboard:xp");
+  const rankAsc = await redis.zRank("leaderboard:xp", username); // returns number | null
+
+  if (rankAsc === undefined) return null;
+
+  return total - rankAsc;
+}
+
+
+async function get_fragment(username: string){
   const fragmentInDB = await redis.get(`fragment:${username}`); // fragment is 0-2
 
   if (fragmentInDB) {
@@ -29,6 +59,108 @@ async function getFragment(username: string){
   await redis.set(`fragment:${username}`, String(fragment));
   return fragment;
 }
+
+// Helper to add XP for first/normal submission
+async function handleFirstAndDone(
+  username: string,
+  doneKey: string,
+  firstKey: string
+): Promise<{ xpGained: number; first: boolean; alreadyDone: boolean }> {
+  // Check if user already submitted
+  const alreadyDone = (await redis.hGet(doneKey, username)) !== null;
+  if (alreadyDone) return { xpGained: 0, first: false, alreadyDone: true };
+
+  let xpGained = NORMAL_XP;
+  let first = false;
+
+  // Check if anyone has submitted first
+  const firstPerson = await redis.get(firstKey);
+  if (!firstPerson) {
+    await redis.set(firstKey, username);
+    xpGained = FIRST_XP;
+    first = true;
+  }
+
+  // Mark user as done
+  await redis.hSet(doneKey, { [username]: "1" });
+  // Give XP
+  await redis.zIncrBy("leaderboard:xp", username, xpGained);
+
+  return { xpGained, first, alreadyDone: false };
+}
+
+export async function add_fragment_clue(
+  username: string,
+  mysteryId: string,
+  location: string
+) {
+  const fragmentId = await get_fragment(username);
+  const doneKey = `fragment_done:${mysteryId}:${location}:${fragmentId}`;
+  const firstKey = `fragment_first:${mysteryId}:${location}:${fragmentId}`;
+
+  return handleFirstAndDone(username, doneKey, firstKey);
+}
+
+export async function get_fragment_status(
+  username: string,
+  mysteryId: string,
+  location: string
+) {
+  const fragmentId = await get_fragment(username);
+  const doneKey = `fragment_done:${mysteryId}:${location}:${fragmentId}`;
+  const firstKey = `fragment_first:${mysteryId}:${location}:${fragmentId}`;
+
+  const done = (await redis.hGet(doneKey, username)) !== null;
+  const firstPerson = await redis.get(firstKey);
+  const first = firstPerson === username;
+
+  return { fragmentId, done, first };
+}
+
+export async function add_location_clue(
+  username: string,
+  mysteryId: string,
+  location: string
+) {
+  const doneKey = `location_done:${mysteryId}:${location}`;
+  const firstKey = `location_first:${mysteryId}:${location}`;
+
+  return handleFirstAndDone(username, doneKey, firstKey);
+}
+
+export async function get_location_status(
+  username: string,
+  mysteryId: string,
+  location: string
+) {
+  const doneKey = `location_done:${mysteryId}:${location}`;
+  const firstKey = `location_first:${mysteryId}:${location}`;
+
+  const done = (await redis.hGet(doneKey, username)) !== null;
+  const firstPerson = await redis.get(firstKey);
+  const first = firstPerson === username;
+
+  return { done, first };
+}
+
+export async function add_main_clue(username: string, mysteryId: string) {
+  const doneKey = `main_done:${mysteryId}`;
+  const firstKey = `main_first:${mysteryId}`;
+
+  return handleFirstAndDone(username, doneKey, firstKey);
+}
+
+export async function get_main_status(username: string, mysteryId: string) {
+  const doneKey = `main_done:${mysteryId}`;
+  const firstKey = `main_first:${mysteryId}`;
+
+  const done = (await redis.hGet(doneKey, username)) !== null;
+  const firstPerson = await redis.get(firstKey);
+  const first = firstPerson === username;
+
+  return { done, first };
+}
+
 
 router.get<{ postId: string }, InitResponse | { status: string; message: string }>(
   '/api/init',
@@ -45,18 +177,18 @@ router.get<{ postId: string }, InitResponse | { status: string; message: string 
     }
 
     try {
-      const [username] = await Promise.all([
+      const [usernameInDB] = await Promise.all([
         reddit.getCurrentUsername()
-      ]);
+      ])
 
-      const [xp] = await Promise.all([
-        redis.get(`xp:${username}`)
-      ]);
+      const username = usernameInDB ?? 'anonymous'
+
+      const xp = await get_xp(username)
 
       res.json({
         type: 'init',
         postId: postId,
-        xp: xp ? parseInt(xp) : 0,
+        xp: xp,
         username: username ?? 'anonymous',
       });
     } catch (error) {
