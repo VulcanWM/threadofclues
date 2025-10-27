@@ -14,6 +14,22 @@ app.use(express.text());
 
 const router = express.Router();
 
+async function increaseXP(username: string, xp: number): Promise<void> {
+  await redis.incrBy(`xp:${username}`, xp);
+}
+
+async function getFragment(username: string){
+  const fragmentInDB = await redis.get(`fragment:${username}`); // fragment is 0-2
+
+  if (fragmentInDB) {
+    return parseInt(fragmentInDB);
+  }
+
+  const fragment = Math.floor(Math.random() * 3) // random number between 0 and 2
+  await redis.set(`fragment:${username}`, String(fragment));
+  return fragment;
+}
+
 router.get<{ postId: string }, InitResponse | { status: string; message: string }>(
   '/api/init',
   async (_req, res): Promise<void> => {
@@ -34,7 +50,7 @@ router.get<{ postId: string }, InitResponse | { status: string; message: string 
       ]);
 
       const [xp] = await Promise.all([
-        redis.get(`xp:{username}`)
+        redis.get(`xp:${username}`)
       ]);
 
       res.json({
@@ -67,7 +83,7 @@ router.post<{ postId: string }, IncrementResponse | { status: string; message: s
     }
 
     res.json({
-      count: await redis.incrBy('count', 1),
+      count: await redis.incrBy(`xp:{username}`, 1),
       postId,
       type: 'increment',
     });
