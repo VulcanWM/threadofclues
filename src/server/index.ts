@@ -29,15 +29,18 @@ router.get<{ postId: string }, InitResponse | { status: string; message: string 
     }
 
     try {
-      const [count, username] = await Promise.all([
-        redis.get('count'),
-        reddit.getCurrentUsername(),
+      const [username] = await Promise.all([
+        reddit.getCurrentUsername()
+      ]);
+
+      const [xp] = await Promise.all([
+        redis.get(`xp:{username}`)
       ]);
 
       res.json({
         type: 'init',
         postId: postId,
-        count: count ? parseInt(count) : 0,
+        xp: xp ? parseInt(xp) : 0,
         username: username ?? 'anonymous',
       });
     } catch (error) {

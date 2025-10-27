@@ -1,7 +1,7 @@
 export type InitResponse = {
   type: 'init';
   postId: string;
-  count: number;
+  xp: number;
   username: string;
 };
 
