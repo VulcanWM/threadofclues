@@ -2,6 +2,7 @@ import express from 'express';
 import { InitResponse, IncrementResponse, DecrementResponse } from '../shared/types/api';
 import { redis, reddit, createServer, context, getServerPort } from '@devvit/web/server';
 import { createPost } from './core/post';
+import {mysteries} from '../shared/mysteries';
 
 const app = express();
 
@@ -184,12 +185,14 @@ router.get<{ postId: string }, InitResponse | { status: string; message: string 
       const username = usernameInDB ?? 'anonymous'
 
       const xp = await get_xp(username)
+      const fragment = await get_fragment(username)
 
       res.json({
         type: 'init',
         postId: postId,
         xp: xp,
         username: username ?? 'anonymous',
+        fragment: fragment
       });
     } catch (error) {
       console.error(`API Init Error for post ${postId}:`, error);
@@ -201,6 +204,98 @@ router.get<{ postId: string }, InitResponse | { status: string; message: string 
     }
   }
 );
+
+router.post('/api/fragment', async (req, res) => {
+  const { username } = await reddit.getCurrentUsername().then(u => ({ username: u ?? 'anonymous' }));
+  const { mysteryId, location, selectedObjects, answer } = req.body;
+
+  if (!mysteryId || !location || !Array.isArray(selectedObjects) || !answer) {
+    return res.status(400).json({ correct: false, message: 'Invalid request body' });
+  }
+
+  // Rate limit (1 attempt per minute)
+  const rateKey = `ratelimit:${username}:${mysteryId}:${location}:fragment`;
+  const lastAttempt = await redis.get(rateKey);
+  if (lastAttempt) {
+    return res.status(429).json({ correct: false, message: 'You can only try once per minute' });
+  }
+
+  await redis.set(rateKey, '1');
+  await redis.expire(rateKey, 60);
+
+  // Get fragment group for user (A/B/C)
+  const fragmentId = await get_fragment(username);
+
+  // Fetch the mystery data (assuming you import or have it available)
+  const mystery = mysteries[mysteryId];
+  if (!mystery) {
+    return res.status(404).json({ correct: false, message: 'Mystery not found' });
+  }
+
+  const loc = mystery.locations.find(l => l.name === location);
+  if (!loc) {
+    return res.status(404).json({ correct: false, message: 'Location not found' });
+  }
+
+  const fragmentCode = loc.fragment_codes[fragmentId]; // e.g. "LAW"
+  const correctObjects = loc.objects
+    .filter(o => o.real && o.messages[fragmentId]) // assuming fragmentId = 0,1,2
+    .map(o => o.id);
+
+  // Check correctness
+  const objectsMatch =
+    selectedObjects.length === correctObjects.length &&
+    selectedObjects.every(id => correctObjects.includes(id));
+
+  const answerCorrect = answer.trim().toUpperCase() === String(fragmentCode).toUpperCase();
+
+  if (!objectsMatch || !answerCorrect) {
+    return res.json({ correct: false, message: 'Incorrect fragment clue or objects' });
+  }
+
+  // Award XP + first-solver logic
+  const { xpGained, first } = await add_fragment_clue(username, mysteryId, location);
+
+  return res.json({
+    correct: true,
+    message: first
+      ? `You solved it first! +${xpGained} XP`
+      : `Correct! +${xpGained} XP`,
+    xpGained,
+    first,
+  });
+});
+
+router.get('/api/progress', async (req, res) => {
+  try {
+    const username = (await reddit.getCurrentUsername()) ?? 'anonymous';
+    const { mysteryId } = req.query;
+
+    if (!mysteryId || typeof mysteryId !== 'string') {
+      return res.status(400).json({ error: 'mysteryId is required' });
+    }
+
+    const mystery = mysteries[mysteryId];
+    if (!mystery) return res.status(404).json({ error: 'Mystery not found' });
+
+    const progress: Record<number, { fragment: boolean; location: boolean }> = {};
+
+    for (let i = 0; i < mystery.locations.length; i++) {
+      const loc = mystery.locations[i];
+
+      const fragmentStatus = await get_fragment_status(username, mysteryId, loc.name);
+      const locationStatus = await get_location_status(username, mysteryId, loc.name);
+
+      progress[i] = { fragment: fragmentStatus.done, location: locationStatus.done };
+    }
+
+    res.json(progress);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 
 router.post<{ postId: string }, IncrementResponse | { status: string; message: string }, unknown>(
   '/api/increment',

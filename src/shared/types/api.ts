@@ -3,6 +3,7 @@ export type InitResponse = {
   postId: string;
   xp: number;
   username: string;
+  fragment: number;
 };
 
 export type IncrementResponse = {

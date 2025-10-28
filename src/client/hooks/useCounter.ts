@@ -5,6 +5,7 @@ interface CounterState {
   xp: number;
   username: string | null;
   loading: boolean;
+  fragment: number
 }
 
 export const useCounter = () => {
@@ -12,6 +13,7 @@ export const useCounter = () => {
     xp: 0,
     username: null,
     loading: true,
+    fragment: 0,
   });
   const [postId, setPostId] = useState<string | null>(null);
 
@@ -23,7 +25,7 @@ export const useCounter = () => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data: InitResponse = await res.json();
         if (data.type !== 'init') throw new Error('Unexpected response');
-        setState({ xp: data.xp, username: data.username, loading: false });
+        setState({ xp: data.xp, username: data.username, loading: false, fragment: data.fragment });
         setPostId(data.postId);
       } catch (err) {
         console.error('Failed to init counter', err);
