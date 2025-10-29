@@ -68,7 +68,8 @@ async function handleFirstAndDone(
   firstKey: string
 ): Promise<{ xpGained: number; first: boolean; alreadyDone: boolean }> {
   // Check if user already submitted
-  const alreadyDone = (await redis.hGet(doneKey, username)) !== null;
+  const alreadyDone = (await redis.hGet(doneKey, username)) !== undefined;
+  console.log(alreadyDone)
   if (alreadyDone) return { xpGained: 0, first: false, alreadyDone: true };
 
   let xpGained = NORMAL_XP;
@@ -86,6 +87,7 @@ async function handleFirstAndDone(
   await redis.hSet(doneKey, { [username]: "1" });
   // Give XP
   await redis.zIncrBy("leaderboard:xp", username, xpGained);
+  console.log(xpGained)
 
   return { xpGained, first, alreadyDone: false };
 }
@@ -110,10 +112,16 @@ export async function get_fragment_status(
   const fragmentId = await get_fragment(username);
   const doneKey = `fragment_done:${mysteryId}:${location}:${fragmentId}`;
   const firstKey = `fragment_first:${mysteryId}:${location}:${fragmentId}`;
+  console.log(location)
+  console.log(doneKey)
+  console.log(firstKey)
 
-  const done = (await redis.hGet(doneKey, username)) !== null;
+  const done = (await redis.hGet(doneKey, username)) === '1';
   const firstPerson = await redis.get(firstKey);
   const first = firstPerson === username;
+  console.log(done)
+  console.log(first)
+  console.log(firstPerson)
 
   return { fragmentId, done, first };
 }
@@ -137,7 +145,7 @@ export async function get_location_status(
   const doneKey = `location_done:${mysteryId}:${location}`;
   const firstKey = `location_first:${mysteryId}:${location}`;
 
-  const done = (await redis.hGet(doneKey, username)) !== null;
+  const done = (await redis.hGet(doneKey, username)) === '1';
   const firstPerson = await redis.get(firstKey);
   const first = firstPerson === username;
 
@@ -155,7 +163,7 @@ export async function get_main_status(username: string, mysteryId: string) {
   const doneKey = `main_done:${mysteryId}`;
   const firstKey = `main_first:${mysteryId}`;
 
-  const done = (await redis.hGet(doneKey, username)) !== null;
+  const done = (await redis.hGet(doneKey, username)) === '1';
   const firstPerson = await redis.get(firstKey);
   const first = firstPerson === username;
 
@@ -183,9 +191,11 @@ router.get<{ postId: string }, InitResponse | { status: string; message: string 
       ])
 
       const username = usernameInDB ?? 'anonymous'
-
+      console.log(username)
       const xp = await get_xp(username)
+      console.log("xp: " + xp)
       const fragment = await get_fragment(username)
+      console.log("fragment: " + fragment)
 
       res.json({
         type: 'init',
@@ -281,20 +291,67 @@ router.get('/api/progress', async (req, res) => {
     const progress: Record<number, { fragment: boolean; location: boolean }> = {};
 
     for (let i = 0; i < mystery.locations.length; i++) {
-      const loc = mystery.locations[i];
+      const { name } = mystery.locations[i];
 
-      const fragmentStatus = await get_fragment_status(username, mysteryId, loc.name);
-      const locationStatus = await get_location_status(username, mysteryId, loc.name);
+      const fragmentStatus = await get_fragment_status(username, mysteryId, name);
+      const locationStatus = await get_location_status(username, mysteryId, name);
 
       progress[i] = { fragment: fragmentStatus.done, location: locationStatus.done };
     }
 
+    console.log(progress)
     res.json(progress);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+router.post('/api/location', async (req, res) => {
+  const { username } = await reddit.getCurrentUsername().then(u => ({ username: u ?? 'anonymous' }));
+  const { mysteryId, location, answer } = req.body;
+
+  if (!mysteryId || !location || !answer) {
+    return res.status(400).json({ correct: false, message: 'Invalid request body' });
+  }
+
+  // Rate limit (1 attempt per minute)
+  const rateKey = `ratelimit:${username}:${mysteryId}:${location}:main`;
+  const lastAttempt = await redis.get(rateKey);
+  if (lastAttempt) {
+    return res.status(429).json({ correct: false, message: 'You can only try once per minute' });
+  }
+
+  await redis.set(rateKey, '1');
+  await redis.expire(rateKey, 60);
+
+  const mystery = mysteries[mysteryId];
+  if (!mystery) return res.status(404).json({ correct: false, message: 'Mystery not found' });
+
+  const loc = mystery.locations.find(l => l.name === location);
+  if (!loc) return res.status(404).json({ correct: false, message: 'Location not found' });
+
+  // Compare with correct code
+  const correctCode = loc.location_code?.toUpperCase();
+  const answerCorrect = answer.trim().toUpperCase() === correctCode;
+
+  if (!answerCorrect) {
+    return res.json({ correct: false, message: '❌ Incorrect location code.' });
+  }
+
+  // Award XP for correct location
+  const { xpGained, first } = await add_location_clue(username, mysteryId, location);
+
+  return res.json({
+    correct: true,
+    message: first
+      ? `🎉 You’re the first to solve this location! +${xpGained} XP`
+      : `✅ Correct! +${xpGained} XP`,
+    xpGained,
+    first,
+  });
+});
+
 
 
 router.post<{ postId: string }, IncrementResponse | { status: string; message: string }, unknown>(

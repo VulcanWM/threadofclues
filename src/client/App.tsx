@@ -12,6 +12,8 @@ export const App = () => {
   const [page, setPage] = useState<Page>({ view: 'menu' });
   const [selectedClue, setSelectedClue] = useState<string | null>(null);
   const { xp, username, loading, fragment } = useCounter();
+  console.log("fragment: ", fragment)
+  console.log("xp: ", xp)
 
   const [locationProgress, setLocationProgress] = useState<
     Record<number, { fragment: boolean; location: boolean }>
@@ -56,6 +58,16 @@ export const App = () => {
 
     void fetchProgress();
   }, [page]);
+
+  // Sync fragmentSolved / locationSolved when entering a room
+  useEffect(() => {
+    if (page.view !== 'room') return;
+
+    const progress = locationProgress[page.location] || { fragment: false, location: false };
+    setFragmentSolved(progress.fragment);
+    setLocationSolved(progress.location);
+  }, [page, locationProgress]);
+
 
   // ---------- RENDER ----------
   // ---------------- MENU PAGE ----------------
@@ -146,8 +158,9 @@ export const App = () => {
     const mystery = mysteries[page.mystery];
     const location = mystery.locations[page.location];
 
+    // Toggle object selection for fragment submission
     const toggleObject = (id: string) => {
-      if (fragmentSolved) return;
+      if (fragmentSolved) return; // don't allow changing after solved
       setSelectedObjects((prev) => {
         if (prev.includes(id)) return prev.filter((o) => o !== id);
         if (prev.length >= 3) return prev;
@@ -155,15 +168,19 @@ export const App = () => {
       });
     };
 
+    // Submit fragment
     const submitFragment = async () => {
       if (cooldown > 0) return;
       if (selectedObjects.length !== 3) {
         setFragmentStatus('error');
         setFragmentMessage('❌ Select exactly 3 objects first.');
+        console.log("Selected objects: ", selectedObjects)
         return;
       }
       setFragmentStatus('loading');
       setCooldown(60);
+
+      console.log("Selected objects: ", selectedObjects)
 
       try {
         const res = await fetch('/api/fragment', {
@@ -178,11 +195,11 @@ export const App = () => {
         });
 
         const data = await res.json();
+        console.log(data);
 
         if (data.correct) {
           setFragmentStatus('success');
           setFragmentSolved(true);
-          setSelectedObjects(data.correctObjects);
           setFragmentMessage(
             `✅ Fragment cracked! +${data.xpGained} XP${data.first ? ' (First to solve!)' : ''}`
           );
@@ -196,6 +213,7 @@ export const App = () => {
       }
     };
 
+    // Submit location
     const submitLocation = async () => {
       if (cooldown > 0) return;
       setLocationStatus('loading');
@@ -226,6 +244,7 @@ export const App = () => {
 
     return (
       <div className="min-h-screen bg-[#0b0b0c] text-white flex flex-col items-center p-6">
+        {/* Back button */}
         <button
           onClick={() => setPage({ view: 'city', mystery: page.mystery })}
           className="mb-4 text-gray-300 hover:text-[#ff4500]"
@@ -252,7 +271,10 @@ export const App = () => {
                 className={`absolute transform -translate-x-1/2 -translate-y-1/2 text-2xl transition-all duration-300 ${
                   selected ? 'scale-125 drop-shadow-[0_0_15px_#ff4500]' : 'hover:scale-110'
                 }`}
-                onClick={() => toggleObject(obj.id)}
+                onClick={() => {
+                  setSelectedClue(`${obj.name}: ${obj.messages[fragment]}`); // show clue
+                  toggleObject(obj.id); // also toggle selection
+                }}
               >
                 {obj.emoji}
               </button>
@@ -260,8 +282,24 @@ export const App = () => {
           })}
         </div>
 
-        {/* Inputs */}
+        {/* CLUE MODAL */}
+        {selectedClue && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center">
+            <div className="bg-[#1a1a1b] p-6 rounded-xl max-w-md text-center border border-[#272729]">
+              <p className="italic mb-4">{selectedClue}</p>
+              <button
+                onClick={() => setSelectedClue(null)}
+                className="bg-[#ff4500] px-4 py-2 rounded-full hover:bg-[#d93900]"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* INPUTS */}
         <div className="mt-6 flex flex-col gap-4 items-center w-full max-w-md">
+          {/* Fragment input */}
           {!fragmentSolved && (
             <div className="w-full">
               <input
@@ -299,6 +337,7 @@ export const App = () => {
             </div>
           )}
 
+          {/* Location input */}
           {fragmentSolved && !locationSolved && (
             <div className="w-full">
               <input
@@ -323,6 +362,7 @@ export const App = () => {
             </div>
           )}
 
+          {/* Success messages */}
           {fragmentSolved && locationSolved && (
             <div className="text-center mt-4">
               <p className="text-green-400 font-semibold">🧩 Fragment cracked: {fragmentInput}</p>
