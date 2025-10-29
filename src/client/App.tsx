@@ -28,8 +28,8 @@ export const App = () => {
   const [locationSolved, setLocationSolved] = useState(false);
   const [solvedFragmentCode, setSolvedFragmentCode] = useState<string | null>(null);
   const [solvedLocationCode, setSolvedLocationCode] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
+  const [roomError, setRoomError] = useState<string | null>(null);
 
   // ---------- EFFECTS ----------
   // Cooldown timer
@@ -79,24 +79,27 @@ export const App = () => {
     setFragmentSolved(progress.fragment);
     setLocationSolved(progress.location);
 
-    const mystery = mysteries[page.mystery]; // or whatever identifies the current mystery
+    const mystery = mysteries[page.mystery];
     if (!mystery) return;
 
-    const locationData = mystery.locations.find(loc => loc.name === page.location);
+    const locationData = mystery.locations[page.location];
     if (!locationData) return;
 
-    // If fragment solved, take the first code (or all codes as needed)
     if (progress.fragment) {
-      setSolvedFragmentCode(locationData.fragment_codes.join('')); // or choose first one
+      setSolvedFragmentCode(locationData.fragment_codes.join(''));
     }
-
-    // If location solved, take the location code
     if (progress.location) {
       setSolvedLocationCode(locationData.location_code);
     }
+
+    // Reset room-specific states when entering new room
+    setRoomError(null);
+    setFragmentInput('');
+    setLocationInput('');
+    setSelectedObjects([]);
+    setFragmentStatus('idle');
+    setLocationStatus('idle');
   }, [page, locationProgress]);
-
-
 
   // ---------- HELPER FUNCTIONS ----------
   const toggleObject = (id: string) => {
@@ -132,7 +135,6 @@ export const App = () => {
         setSolvedFragmentCode(fragmentInput.toUpperCase());
         setXp((prev) => prev + (data.xpGained ?? 0));
 
-        // Update progress locally
         setLocationProgress((prev) => ({
           ...prev,
           [page.location]: {
@@ -141,17 +143,14 @@ export const App = () => {
           },
         }));
 
-
-        setSuccessMessage(
-          `🧩 Fragment cracked: ${fragmentInput.toUpperCase()} ${locationSolved ? `\n🏙️ Location solved: ${solvedLocationCode}` : ''}`
-        );
+        setRoomError(null);
       } else {
         setFragmentStatus('error');
-        setSuccessMessage('❌ Incorrect fragment or objects, try again.');
+        setRoomError('❌ Incorrect fragment or objects, try again.');
       }
     } catch (e) {
       setFragmentStatus('error');
-      setSuccessMessage('❌ Error checking fragment.');
+      setRoomError('❌ Error checking fragment.');
     }
   };
 
@@ -178,7 +177,6 @@ export const App = () => {
         setSolvedLocationCode(locationInput.toUpperCase());
         setXp((prev) => prev + (data.xpGained ?? 0));
 
-        // Update progress locally
         setLocationProgress((prev) => ({
           ...prev,
           [page.location]: {
@@ -187,16 +185,14 @@ export const App = () => {
           },
         }));
 
-        setSuccessMessage(
-          `🧩 Fragment cracked: ${solvedFragmentCode}\n🏙️ Location solved: ${locationInput.toUpperCase()}`
-        );
+        setRoomError(null);
       } else {
         setLocationStatus('error');
-        setSuccessMessage('❌ Incorrect location code.');
+        setRoomError('❌ Incorrect location code.');
       }
     } catch (e) {
       setLocationStatus('error');
-      setSuccessMessage('❌ Error checking location.');
+      setRoomError('❌ Error checking location.');
     }
   };
 
@@ -205,7 +201,6 @@ export const App = () => {
     const allMysteries = Object.entries(mysteries);
     return (
       <div className="min-h-screen bg-[#0b0b0c] text-white flex flex-col items-center justify-center gap-8 p-6">
-        {/* XP Header */}
         <div className="absolute top-4 right-4 flex items-center gap-3 bg-[#1a1a1b] px-4 py-2 rounded-full border border-[#272729] shadow-lg">
           <span className="text-[#ff4500] font-bold">⭐ {counterLoading ? '...' : xp}</span>
           <span className="text-gray-300 text-sm">XP</span>
@@ -238,7 +233,6 @@ export const App = () => {
   // ---------------- CITY PAGE ----------------
   if (page.view === 'city') {
     const mystery = mysteries[page.mystery];
-
     const pinPositions = ['20%', '50%', '70%', '35%', '80%'].map((top, i) => ({
       top,
       left: `${20 + i * 15}%`,
@@ -259,7 +253,7 @@ export const App = () => {
         <div className="relative w-full max-w-3xl aspect-[16/9] bg-[#1a1a1b] rounded-2xl shadow-lg overflow-hidden border border-[#272729]">
           {mystery.locations.map((loc, i) => {
             const progress = locationProgress[i] || { fragment: false, location: false };
-            let bgColor = '#ff0000'; // red = untouched
+            let bgColor = '#ff0000';
             if (progress.fragment && !progress.location) bgColor = 'orange';
             if (progress.fragment && progress.location) bgColor = 'green';
 
@@ -279,14 +273,21 @@ export const App = () => {
     );
   }
 
-// ---------------- ROOM PAGE ----------------
+  // ---------------- ROOM PAGE ----------------
   if (page.view === 'room') {
     const mystery = mysteries[page.mystery];
     const location = mystery.locations[page.location];
 
+    const currentProgress = locationProgress[page.location] || { fragment: false, location: false };
+
+    const fragmentCodeToShow = currentProgress.fragment ? location.fragment_codes[userFragment] : null;
+    const locationCodeToShow = currentProgress.location ? location.location_code : null;
+
+    const canSubmitFragment = !currentProgress.fragment && selectedObjects.length === 3 && cooldown === 0;
+    const canSubmitLocation = currentProgress.fragment && !currentProgress.location && cooldown === 0;
+
     return (
       <div className="min-h-screen bg-[#0b0b0c] text-white flex flex-col items-center p-6">
-        {/* Back button */}
         <button
           onClick={() => setPage({ view: 'city', mystery: page.mystery })}
           className="mb-4 text-gray-300 hover:text-[#ff4500]"
@@ -295,11 +296,22 @@ export const App = () => {
         </button>
 
         <h1 className="text-2xl font-bold text-[#ff4500]">{location.name}</h1>
-        <p className="text-gray-400 mb-4">
-          Select exactly 3 objects that relate to the fragment. Then enter the fragment code.
-        </p>
+        {!locationCodeToShow && !currentProgress.fragment && (
+          <p className="text-gray-400 text-sm mb-4">
+            Three of these objects have clues that combine to form one word. Select the correct three objects and enter the word. (This word is the fragment code.)
+          </p>
+        )}
+        {!locationCodeToShow && currentProgress.fragment && (
+          <p className="text-gray-400 text-sm mb-4">
+            The location code is the link between the three fragment codes. Ask others on r/ThreadOfClues what the other fragment clues were! You have one fragment code, but other people had different fragment codes.
+          </p>
+        )}
+        {locationCodeToShow && fragmentCodeToShow && (
+          <p className="text-gray-400 text-sm mb-4">
+            You have discovered this location’s code. Use the other location codes to deduce the main answer.
+          </p>
+        )}
 
-        {/* OBJECT GRID */}
         <div className="relative w-full max-w-4xl aspect-[16/9] bg-gradient-to-b from-[#242526] to-[#1a1a1b] rounded-2xl shadow-lg border border-[#272729]">
           {location.objects.map((obj, i) => {
             const selected = selectedObjects.includes(obj.id);
@@ -324,7 +336,6 @@ export const App = () => {
           })}
         </div>
 
-        {/* CLUE MODAL */}
         {selectedClue && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center">
             <div className="bg-[#1a1a1b] p-6 rounded-xl max-w-md text-center border border-[#272729]">
@@ -339,22 +350,20 @@ export const App = () => {
           </div>
         )}
 
-        {/* INPUTS */}
         <div className="mt-6 flex flex-col gap-4 items-center w-full max-w-md">
-          {/* Fragment input */}
-          {!fragmentSolved && (
+          {!currentProgress.fragment && (
             <div className="w-full">
               <input
                 type="text"
                 value={fragmentInput}
                 onChange={(e) => setFragmentInput(e.target.value.toUpperCase())}
                 placeholder="Enter fragment code"
-                disabled={selectedObjects.length !== 3 || cooldown > 0 || fragmentStatus === 'loading'}
+                disabled={!canSubmitFragment || fragmentStatus === 'loading'}
                 className="w-full bg-[#1a1a1b] border border-[#272729] px-4 py-2 rounded-lg text-white placeholder-gray-500"
               />
               <button
                 onClick={submitFragment}
-                disabled={selectedObjects.length !== 3 || cooldown > 0 || fragmentStatus === 'loading'}
+                disabled={!canSubmitFragment || fragmentStatus === 'loading'}
                 className="mt-2 w-full bg-[#ff4500] hover:bg-[#d93a00] text-white py-2 rounded-lg transition"
               >
                 {fragmentStatus === 'loading'
@@ -366,20 +375,19 @@ export const App = () => {
             </div>
           )}
 
-          {/* Location input */}
-          {fragmentSolved && !locationSolved && (
+          {currentProgress.fragment && !currentProgress.location && (
             <div className="w-full">
               <input
                 type="text"
                 value={locationInput}
                 onChange={(e) => setLocationInput(e.target.value.toUpperCase())}
                 placeholder="Enter location code"
-                disabled={cooldown > 0 || locationStatus === 'loading'}
+                disabled={!canSubmitLocation || locationStatus === 'loading'}
                 className="w-full bg-[#1a1a1b] border border-[#272729] px-4 py-2 rounded-lg text-white placeholder-gray-500"
               />
               <button
                 onClick={submitLocation}
-                disabled={cooldown > 0 || locationStatus === 'loading'}
+                disabled={!canSubmitLocation || locationStatus === 'loading'}
                 className="mt-2 w-full bg-[#ff4500] hover:bg-[#d93a00] text-white py-2 rounded-lg transition"
               >
                 {locationStatus === 'loading'
@@ -391,12 +399,18 @@ export const App = () => {
             </div>
           )}
 
-          {/* SUCCESS MESSAGE */}
-          {successMessage && (
-            <div className="text-center mt-4 whitespace-pre-line">
-              <p className="text-green-400 font-semibold">{successMessage}</p>
-            </div>
-          )}
+          {/* FEEDBACK */}
+          <div className="text-center mt-4 whitespace-pre-line">
+            {roomError && <p className="text-red-400 font-semibold">{roomError}</p>}
+
+            {fragmentCodeToShow && (
+              <p className="text-green-400 font-semibold">🧩 Fragment solved: {fragmentCodeToShow}</p>
+            )}
+
+            {locationCodeToShow && (
+              <p className="text-green-400 font-semibold">🏙️ Location solved: {locationCodeToShow}</p>
+            )}
+          </div>
         </div>
       </div>
     );

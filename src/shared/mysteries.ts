@@ -3,7 +3,8 @@ type MysteriesType = {
     mystery_name: string
     main_answer: string
     title: string
-    desc: string
+    desc: string,
+    question: string,
     locations: {
       name: string
       emoji: string
@@ -26,6 +27,7 @@ export const mysteries: MysteriesType = {
     "main_answer": "TRUMP",
     "title": '🎭 Vienna Heist',
     "desc": 'Unravel the elegant criminal ring behind the royal jewel theft.',
+    "question": "Which famous person initiated the Vienna Heist? (Surname only)",
     "locations": [
       {
         "name": "Palace",
@@ -134,6 +136,7 @@ export const mysteries: MysteriesType = {
     "main_answer": "ELON",
     "title": '🕵️ London Theft',
     "desc": 'Solve the daring museum robbery that shocked the city.',
+    "question": "Which famous person robbed the London Museum? (First name only)",
     "locations": [
       {
         "name": "Museum",

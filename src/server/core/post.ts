@@ -9,19 +9,19 @@ export const createPost = async () => {
   return await reddit.submitCustomPost({
     splash: {
       // Splash Screen Configuration
-      appDisplayName: 'threadofclues',
-      backgroundUri: 'default-splash.png',
-      buttonLabel: 'Tap to Start',
-      description: 'An exciting interactive experience',
+      appDisplayName: 'Thread of Clues',
+      backgroundUri: 'splash.png',
+      buttonLabel: 'Start Investigating',
+      description: 'Collaborate with others to solve mysteries across cities.',
       entryUri: 'index.html',
-      heading: 'Welcome to the Game!',
-      appIconUri: 'default-icon.png',
+      heading: 'Welcome to Thread of Clues!',
+      appIconUri: 'logo.png',
     },
     postData: {
       gameState: 'initial',
       score: 0,
     },
     subredditName: subredditName,
-    title: 'threadofclues',
+    title: 'Thread of Clues - First 2 Cities',
   });
 };
