@@ -237,9 +237,13 @@ router.post('/api/fragment', async (req, res) => {
   }
 
   const fragmentCode = loc.fragment_codes[fragmentId]; // e.g. "LAW"
+  console.log(fragmentCode)
   const correctObjects = loc.objects
     .filter(o => o.real && o.messages[fragmentId]) // assuming fragmentId = 0,1,2
     .map(o => o.id);
+  console.log(correctObjects)
+
+  console.log(answer)
 
   // Check correctness
   const objectsMatch =
@@ -338,6 +342,101 @@ router.post('/api/location', async (req, res) => {
     xpGained,
     first,
   });
+});
+
+router.post('/api/main', async (req, res) => {
+  const { username } = await reddit.getCurrentUsername().then(u => ({ username: u ?? 'anonymous' }));
+  const { mysteryId, answer } = req.body;
+
+  if (!mysteryId || !answer) {
+    return res.status(400).json({ correct: false, message: 'Invalid request body' });
+  }
+
+  // Rate limit: 1 attempt per minute
+  const rateKey = `ratelimit:${username}:${mysteryId}:main`;
+  const lastAttempt = await redis.get(rateKey);
+  if (lastAttempt) {
+    return res.status(429).json({ correct: false, message: 'You can only try once per minute' });
+  }
+  await redis.set(rateKey, '1');
+  await redis.expire(rateKey, 60);
+
+  const mystery = mysteries[mysteryId];
+  if (!mystery) return res.status(404).json({ correct: false, message: 'Mystery not found' });
+
+  // Check if all locations are solved
+  const allSolved = await Promise.all(
+    mystery.locations.map(async (loc) => {
+      const status = await get_location_status(username, mysteryId, loc.name);
+      return status.done;
+    })
+  );
+
+  if (!allSolved.every(Boolean)) {
+    return res.json({ correct: false, message: 'Solve all location clues first!' });
+  }
+
+  const answerCorrect = answer.trim().toUpperCase() === mystery.main_answer.toUpperCase();
+
+  if (!answerCorrect) {
+    return res.json({ correct: false, message: '❌ Incorrect main answer.' });
+  }
+
+  // Award XP / first solver logic
+  const { xpGained, first } = await add_main_clue(username, mysteryId);
+
+  return res.json({
+    correct: true,
+    message: first ? `🎉 You solved it first! +${xpGained} XP` : `✅ Correct! +${xpGained} XP`,
+    xpGained,
+    first,
+  });
+});
+
+router.get('/api/progressAll', async (_req, res) => {
+  try {
+    const username = (await reddit.getCurrentUsername()) ?? 'anonymous';
+
+    const allProgress: Record<
+      string, // mysteryId
+      {
+        locations: Record<
+          string, // location name
+          { fragment: boolean; location: boolean }
+        >;
+        main: { done: boolean; first: boolean };
+      }
+    > = {};
+
+    for (const mysteryId in mysteries) {
+      const mystery = mysteries[mysteryId];
+
+      const locationProgress: Record<string, { fragment: boolean; location: boolean }> = {};
+
+      for (const loc of mystery.locations) {
+        const fragmentStatus = await get_fragment_status(username, mysteryId, loc.name);
+        const locationStatus = await get_location_status(username, mysteryId, loc.name);
+
+        locationProgress[loc.name] = {
+          fragment: fragmentStatus.done,
+          location: locationStatus.done,
+        };
+      }
+
+      const mainStatus = await get_main_status(username, mysteryId);
+
+      allProgress[mysteryId] = {
+        locations: locationProgress,
+        main: mainStatus,
+      };
+    }
+
+    console.log('All progress:', allProgress);
+    res.json(allProgress);
+  } catch (e) {
+    console.error('Failed to fetch all progress', e);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 

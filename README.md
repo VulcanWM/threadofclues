@@ -1,31 +1,64 @@
-## Devvit React Starter
+# Thread of Clues
 
-A starter to build web applications on Reddit's developer platform
+**A collaborative mystery-solving game built for Reddit communities.**  
+Players work together across multiple posts to uncover hidden words, decode connections, and ultimately solve the grand mystery.
 
-- [Devvit](https://developers.reddit.com/): A way to build and deploy immersive games on Reddit
-- [Vite](https://vite.dev/): For compiling the webView
-- [React](https://react.dev/): For UI
-- [Express](https://expressjs.com/): For backend logic
-- [Tailwind](https://tailwindcss.com/): For styles
-- [Typescript](https://www.typescriptlang.org/): For type safety
+---
 
-## Getting Started
+## 🎯 Overview
 
-> Make sure you have Node 22 downloaded on your machine before running!
+**Thread of Clues** turns Reddit into a citywide investigation.   
+There are multiple *locationn* (e.g. Vienna, London), where players discover clues by inspecting objects, sharing discoveries, and piecing together “fragment codes”.  
+When all fragment clues are found, users can combine them to uncover each **location code**, which leads to the **main mystery solution**.
 
-1. Run `npm create devvit@latest --template=react`
-2. Go through the installation wizard. You will need to create a Reddit account and connect it to Reddit developers
-3. Copy the command on the success page into your terminal
+This game thrives on *community collaboration* - players must discuss, share hints, and work together to progress.
 
-## Commands
+---
 
-- `npm run dev`: Starts a development server where you can develop your application live on Reddit.
-- `npm run build`: Builds your client and server projects
-- `npm run deploy`: Uploads a new version of your app
-- `npm run launch`: Publishes your app for review
-- `npm run login`: Logs your CLI into Reddit
-- `npm run check`: Type checks, lints, and prettifies your app
+## 🕹️ Gameplay Flow
 
-## Cursor Integration
+1. **Enter a Mystery City:** Choose a location (e.g. Vienna Heist).
+2. **Explore Rooms:** Each room contains objects with hidden clues.
+3. **Find the Fragment Word:** Select three related clues to form a fragment word.
+4. **Collaborate on Reddit:** Share fragments in r/ThreadOfClues to discover the location code.
+5. **Solve the Big Mystery:** Combine all location codes to find the final answer.
 
-This template comes with a pre-configured cursor environment. To get started, [download cursor](https://www.cursor.com/downloads) and enable the `devvit-mcp` when prompted.
+---
+
+## 🌍 Built For Reddit
+
+- Designed for **community play** - progress is made through collaboration on Reddit threads.
+- Built with **Devvit Web**, ensuring full compatibility with Reddit’s interactive post system.
+- Uses **Redis** to handle shared state, track progress, and record player discoveries across rooms.
+
+---
+
+## 🧠 Key Features
+
+- **Asynchronous Multiplayer:** Each player contributes clues; the full puzzle emerges from community cooperation.
+- **Dynamic Instructions:** Guidance changes based on progress - e.g. when fragment or location codes are solved.
+- **State Tracking:** Player progress and completion status stored efficiently via Redis.
+- **Sleek, Themed UI:** Includes a custom splash screen and polished design for immersive play.
+
+---
+
+## 🛠️ Tech Stack
+
+- **Frontend:** Devvit Web (React + TypeScript)
+- **Backend:** Redis for game state management
+- **Styling:** Tailwind CSS
+- **Data Management:** Type-safe schema for locations, rooms, and mysteries
+- **Collaboration Layer:** Reddit threads as the social hub for clue sharing
+
+---
+
+## 🎥 Demo & Links
+
+- **App Listing:** [developer.reddit.com/...](#)
+- **Demo Post:** [r/ThreadOfClues - Play Now!](#)
+- **Video (optional):** [Demo video (YouTube link)](#)
+- **Source Code:** [GitHub Repository](#)
+
+---
+
+> “Alone, you find fragments. Together, you solve the mystery.”
