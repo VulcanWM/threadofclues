@@ -5,7 +5,7 @@ Players work together across multiple posts to uncover hidden words, decode conn
 
 ---
 
-## 🎯 Overview
+## Overview
 
 **Thread of Clues** turns Reddit into a citywide investigation.   
 There are multiple *locationn* (e.g. Vienna, London), where players discover clues by inspecting objects, sharing discoveries, and piecing together “fragment codes”.  
@@ -15,7 +15,7 @@ This game thrives on *community collaboration* - players must discuss, share hin
 
 ---
 
-## 🕹️ Gameplay Flow
+## Gameplay Flow
 
 1. **Enter a Mystery City:** Choose a location (e.g. Vienna Heist).
 2. **Explore Rooms:** Each room contains objects with hidden clues.
@@ -25,7 +25,7 @@ This game thrives on *community collaboration* - players must discuss, share hin
 
 ---
 
-## 🌍 Built For Reddit
+## Built For Reddit
 
 - Designed for **community play** - progress is made through collaboration on Reddit threads.
 - Built with **Devvit Web**, ensuring full compatibility with Reddit’s interactive post system.
@@ -33,7 +33,7 @@ This game thrives on *community collaboration* - players must discuss, share hin
 
 ---
 
-## 🧠 Key Features
+## Key Features
 
 - **Asynchronous Multiplayer:** Each player contributes clues; the full puzzle emerges from community cooperation.
 - **Dynamic Instructions:** Guidance changes based on progress - e.g. when fragment or location codes are solved.
@@ -42,7 +42,7 @@ This game thrives on *community collaboration* - players must discuss, share hin
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 - **Frontend:** Devvit Web (React + TypeScript)
 - **Backend:** Redis for game state management
@@ -52,12 +52,12 @@ This game thrives on *community collaboration* - players must discuss, share hin
 
 ---
 
-## 🎥 Demo & Links
+## Demo & Links
 
-- **App Listing:** [developer.reddit.com/...](#)
-- **Demo Post:** [r/ThreadOfClues - Play Now!](#)
-- **Video (optional):** [Demo video (YouTube link)](#)
-- **Source Code:** [GitHub Repository](#)
+- [App Listing](https://developers.reddit.com/apps/threadofclues)
+- [Demo Post](https://www.reddit.com/r/ThreadOfClues/comments/1ojask4/thread_of_clues_first_2_cities)
+- [Demo Video](https://youtu.be/8Hfp98ELtns)
+- [Source Code](https://github.com/VulcanWM/threadofclues)
 
 ---
 
