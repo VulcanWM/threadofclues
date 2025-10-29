@@ -69,7 +69,6 @@ async function handleFirstAndDone(
 ): Promise<{ xpGained: number; first: boolean; alreadyDone: boolean }> {
   // Check if user already submitted
   const alreadyDone = (await redis.hGet(doneKey, username)) !== undefined;
-  console.log(alreadyDone)
   if (alreadyDone) return { xpGained: 0, first: false, alreadyDone: true };
 
   let xpGained = NORMAL_XP;
@@ -87,7 +86,6 @@ async function handleFirstAndDone(
   await redis.hSet(doneKey, { [username]: "1" });
   // Give XP
   await redis.zIncrBy("leaderboard:xp", username, xpGained);
-  console.log(xpGained)
 
   return { xpGained, first, alreadyDone: false };
 }
@@ -112,16 +110,10 @@ export async function get_fragment_status(
   const fragmentId = await get_fragment(username);
   const doneKey = `fragment_done:${mysteryId}:${location}:${fragmentId}`;
   const firstKey = `fragment_first:${mysteryId}:${location}:${fragmentId}`;
-  console.log(location)
-  console.log(doneKey)
-  console.log(firstKey)
 
   const done = (await redis.hGet(doneKey, username)) === '1';
   const firstPerson = await redis.get(firstKey);
   const first = firstPerson === username;
-  console.log(done)
-  console.log(first)
-  console.log(firstPerson)
 
   return { fragmentId, done, first };
 }
@@ -191,11 +183,8 @@ router.get<{ postId: string }, InitResponse | { status: string; message: string 
       ])
 
       const username = usernameInDB ?? 'anonymous'
-      console.log(username)
       const xp = await get_xp(username)
-      console.log("xp: " + xp)
       const fragment = await get_fragment(username)
-      console.log("fragment: " + fragment)
 
       res.json({
         type: 'init',
@@ -299,7 +288,6 @@ router.get('/api/progress', async (req, res) => {
       progress[i] = { fragment: fragmentStatus.done, location: locationStatus.done };
     }
 
-    console.log(progress)
     res.json(progress);
   } catch (e) {
     console.error(e);

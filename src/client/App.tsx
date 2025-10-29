@@ -11,28 +11,25 @@ export const App = () => {
   // ---------- STATE ----------
   const [page, setPage] = useState<Page>({ view: 'menu' });
   const [selectedClue, setSelectedClue] = useState<string | null>(null);
-  const { xp, username, loading, fragment } = useCounter();
-  console.log("fragment: ", fragment)
-  console.log("xp: ", xp)
 
-  const [locationProgress, setLocationProgress] = useState<
-    Record<number, { fragment: boolean; location: boolean }>
-  >({});
+  // XP + fragment group from init
+  const { username: counterUsername, loading: counterLoading, fragment: userFragment } = useCounter();
+  const [username, setUsername] = useState<string>(counterUsername || 'anonymous');
+  const [xp, setXp] = useState<number>(0);
+  const [locationProgress, setLocationProgress] = useState<Record<number, { fragment: boolean; location: boolean }>>({});
 
   // ROOM STATE
   const [selectedObjects, setSelectedObjects] = useState<string[]>([]);
   const [fragmentInput, setFragmentInput] = useState('');
   const [locationInput, setLocationInput] = useState('');
-  const [fragmentStatus, setFragmentStatus] = useState<
-    'idle' | 'loading' | 'success' | 'error'
-  >('idle');
-  const [locationStatus, setLocationStatus] = useState<
-    'idle' | 'loading' | 'success' | 'error'
-  >('idle');
+  const [fragmentStatus, setFragmentStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [locationStatus, setLocationStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [fragmentSolved, setFragmentSolved] = useState(false);
   const [locationSolved, setLocationSolved] = useState(false);
+  const [solvedFragmentCode, setSolvedFragmentCode] = useState<string | null>(null);
+  const [solvedLocationCode, setSolvedLocationCode] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
-  const [fragmentMessage, setFragmentMessage] = useState<string | null>(null);
 
   // ---------- EFFECTS ----------
   // Cooldown timer
@@ -42,7 +39,22 @@ export const App = () => {
     return () => clearInterval(timer);
   }, [cooldown]);
 
-  // Fetch progress when page.mystery exists
+  // Fetch init data once on app load
+  useEffect(() => {
+    const fetchInit = async () => {
+      try {
+        const res = await fetch('/api/init');
+        const data = await res.json();
+        setUsername(data.username);
+        setXp(data.xp ?? 0);
+      } catch (e) {
+        console.error('Failed to init app', e);
+      }
+    };
+    void fetchInit();
+  }, []);
+
+  // Fetch progress for current mystery when entering city or room
   useEffect(() => {
     if (page.view !== 'city' && page.view !== 'room') return;
 
@@ -55,30 +67,147 @@ export const App = () => {
         console.error('Failed to fetch progress', e);
       }
     };
-
     void fetchProgress();
   }, [page]);
 
-  // Sync fragmentSolved / locationSolved when entering a room
+  // Sync solved state when entering room
   useEffect(() => {
     if (page.view !== 'room') return;
 
     const progress = locationProgress[page.location] || { fragment: false, location: false };
+
     setFragmentSolved(progress.fragment);
     setLocationSolved(progress.location);
+
+    const mystery = mysteries[page.mystery]; // or whatever identifies the current mystery
+    if (!mystery) return;
+
+    const locationData = mystery.locations.find(loc => loc.name === page.location);
+    if (!locationData) return;
+
+    // If fragment solved, take the first code (or all codes as needed)
+    if (progress.fragment) {
+      setSolvedFragmentCode(locationData.fragment_codes.join('')); // or choose first one
+    }
+
+    // If location solved, take the location code
+    if (progress.location) {
+      setSolvedLocationCode(locationData.location_code);
+    }
   }, [page, locationProgress]);
 
 
+
+  // ---------- HELPER FUNCTIONS ----------
+  const toggleObject = (id: string) => {
+    if (fragmentSolved) return;
+    setSelectedObjects((prev) => {
+      if (prev.includes(id)) return prev.filter((o) => o !== id);
+      if (prev.length >= 3) return prev;
+      return [...prev, id];
+    });
+  };
+
+  const submitFragment = async () => {
+    if (cooldown > 0 || selectedObjects.length !== 3) return;
+    setFragmentStatus('loading');
+    setCooldown(60);
+
+    try {
+      const res = await fetch('/api/fragment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mysteryId: page.mystery,
+          location: mysteries[page.mystery].locations[page.location].name,
+          selectedObjects,
+          answer: fragmentInput,
+        }),
+      });
+      const data = await res.json();
+
+      if (data.correct) {
+        setFragmentStatus('success');
+        setFragmentSolved(true);
+        setSolvedFragmentCode(fragmentInput.toUpperCase());
+        setXp((prev) => prev + (data.xpGained ?? 0));
+
+        // Update progress locally
+        setLocationProgress((prev) => ({
+          ...prev,
+          [page.location]: {
+            fragment: true,
+            location: prev[page.location]?.location || false,
+          },
+        }));
+
+
+        setSuccessMessage(
+          `🧩 Fragment cracked: ${fragmentInput.toUpperCase()} ${locationSolved ? `\n🏙️ Location solved: ${solvedLocationCode}` : ''}`
+        );
+      } else {
+        setFragmentStatus('error');
+        setSuccessMessage('❌ Incorrect fragment or objects, try again.');
+      }
+    } catch (e) {
+      setFragmentStatus('error');
+      setSuccessMessage('❌ Error checking fragment.');
+    }
+  };
+
+  const submitLocation = async () => {
+    if (cooldown > 0) return;
+    setLocationStatus('loading');
+    setCooldown(60);
+
+    try {
+      const res = await fetch('/api/location', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mysteryId: page.mystery,
+          location: mysteries[page.mystery].locations[page.location].name,
+          answer: locationInput,
+        }),
+      });
+      const data = await res.json();
+
+      if (data.correct) {
+        setLocationStatus('success');
+        setLocationSolved(true);
+        setSolvedLocationCode(locationInput.toUpperCase());
+        setXp((prev) => prev + (data.xpGained ?? 0));
+
+        // Update progress locally
+        setLocationProgress((prev) => ({
+          ...prev,
+          [page.location]: {
+            fragment: prev[page.location]?.fragment || false,
+            location: true,
+          },
+        }));
+
+        setSuccessMessage(
+          `🧩 Fragment cracked: ${solvedFragmentCode}\n🏙️ Location solved: ${locationInput.toUpperCase()}`
+        );
+      } else {
+        setLocationStatus('error');
+        setSuccessMessage('❌ Incorrect location code.');
+      }
+    } catch (e) {
+      setLocationStatus('error');
+      setSuccessMessage('❌ Error checking location.');
+    }
+  };
+
   // ---------- RENDER ----------
-  // ---------------- MENU PAGE ----------------
   if (page.view === 'menu') {
     const allMysteries = Object.entries(mysteries);
-
     return (
       <div className="min-h-screen bg-[#0b0b0c] text-white flex flex-col items-center justify-center gap-8 p-6">
         {/* XP Header */}
         <div className="absolute top-4 right-4 flex items-center gap-3 bg-[#1a1a1b] px-4 py-2 rounded-full border border-[#272729] shadow-lg">
-          <span className="text-[#ff4500] font-bold">⭐ {loading ? '...' : xp}</span>
+          <span className="text-[#ff4500] font-bold">⭐ {counterLoading ? '...' : xp}</span>
           <span className="text-gray-300 text-sm">XP</span>
         </div>
 
@@ -88,7 +217,6 @@ export const App = () => {
           Choose your next case to investigate.
         </p>
 
-        {/* Mystery selection */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 w-full max-w-4xl">
           {allMysteries.map(([id, m]) => (
             <button
@@ -102,9 +230,7 @@ export const App = () => {
           ))}
         </div>
 
-        <footer className="text-gray-500 text-sm mt-8">
-          r/Devvit Game • Made for Reddit Hackathon
-        </footer>
+        <footer className="text-gray-500 text-sm mt-8">r/Devvit Game • Made for Reddit Hackathon</footer>
       </div>
     );
   }
@@ -153,94 +279,10 @@ export const App = () => {
     );
   }
 
-  // ---------------- ROOM PAGE ----------------
+// ---------------- ROOM PAGE ----------------
   if (page.view === 'room') {
     const mystery = mysteries[page.mystery];
     const location = mystery.locations[page.location];
-
-    // Toggle object selection for fragment submission
-    const toggleObject = (id: string) => {
-      if (fragmentSolved) return; // don't allow changing after solved
-      setSelectedObjects((prev) => {
-        if (prev.includes(id)) return prev.filter((o) => o !== id);
-        if (prev.length >= 3) return prev;
-        return [...prev, id];
-      });
-    };
-
-    // Submit fragment
-    const submitFragment = async () => {
-      if (cooldown > 0) return;
-      if (selectedObjects.length !== 3) {
-        setFragmentStatus('error');
-        setFragmentMessage('❌ Select exactly 3 objects first.');
-        console.log("Selected objects: ", selectedObjects)
-        return;
-      }
-      setFragmentStatus('loading');
-      setCooldown(60);
-
-      console.log("Selected objects: ", selectedObjects)
-
-      try {
-        const res = await fetch('/api/fragment', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            mysteryId: page.mystery,
-            location: location.name,
-            selectedObjects,
-            answer: fragmentInput,
-          }),
-        });
-
-        const data = await res.json();
-        console.log(data);
-
-        if (data.correct) {
-          setFragmentStatus('success');
-          setFragmentSolved(true);
-          setFragmentMessage(
-            `✅ Fragment cracked! +${data.xpGained} XP${data.first ? ' (First to solve!)' : ''}`
-          );
-        } else {
-          setFragmentStatus('error');
-          setFragmentMessage('❌ Incorrect fragment or objects, try again.');
-        }
-      } catch (e) {
-        setFragmentStatus('error');
-        setFragmentMessage('❌ Error checking fragment. Try again.');
-      }
-    };
-
-    // Submit location
-    const submitLocation = async () => {
-      if (cooldown > 0) return;
-      setLocationStatus('loading');
-      setCooldown(60);
-
-      try {
-        const res = await fetch('/api/location', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            mysteryId: page.mystery,
-            location: location.name,
-            answer: locationInput,
-          }),
-        });
-
-        const data = await res.json();
-        if (data.correct) {
-          setLocationStatus('success');
-          setLocationSolved(true);
-        } else {
-          setLocationStatus('error');
-        }
-      } catch (e) {
-        setLocationStatus('error');
-      }
-    };
 
     return (
       <div className="min-h-screen bg-[#0b0b0c] text-white flex flex-col items-center p-6">
@@ -254,7 +296,7 @@ export const App = () => {
 
         <h1 className="text-2xl font-bold text-[#ff4500]">{location.name}</h1>
         <p className="text-gray-400 mb-4">
-          Select 3 objects that connect — then enter your fragment code.
+          Select exactly 3 objects that relate to the fragment. Then enter the fragment code.
         </p>
 
         {/* OBJECT GRID */}
@@ -272,8 +314,8 @@ export const App = () => {
                   selected ? 'scale-125 drop-shadow-[0_0_15px_#ff4500]' : 'hover:scale-110'
                 }`}
                 onClick={() => {
-                  setSelectedClue(`${obj.name}: ${obj.messages[fragment]}`); // show clue
-                  toggleObject(obj.id); // also toggle selection
+                  setSelectedClue(`${obj.name}: ${obj.messages[userFragment]}`);
+                  toggleObject(obj.id);
                 }}
               >
                 {obj.emoji}
@@ -307,16 +349,12 @@ export const App = () => {
                 value={fragmentInput}
                 onChange={(e) => setFragmentInput(e.target.value.toUpperCase())}
                 placeholder="Enter fragment code"
-                disabled={
-                  selectedObjects.length !== 3 || cooldown > 0 || fragmentStatus === 'loading'
-                }
+                disabled={selectedObjects.length !== 3 || cooldown > 0 || fragmentStatus === 'loading'}
                 className="w-full bg-[#1a1a1b] border border-[#272729] px-4 py-2 rounded-lg text-white placeholder-gray-500"
               />
               <button
                 onClick={submitFragment}
-                disabled={
-                  selectedObjects.length !== 3 || cooldown > 0 || fragmentStatus === 'loading'
-                }
+                disabled={selectedObjects.length !== 3 || cooldown > 0 || fragmentStatus === 'loading'}
                 className="mt-2 w-full bg-[#ff4500] hover:bg-[#d93a00] text-white py-2 rounded-lg transition"
               >
                 {fragmentStatus === 'loading'
@@ -325,15 +363,6 @@ export const App = () => {
                     ? `Try again in ${cooldown}s`
                     : 'Submit Fragment'}
               </button>
-              {fragmentMessage && (
-                <div
-                  className={`mt-2 text-center font-semibold ${
-                    fragmentStatus === 'success' ? 'text-green-400' : 'text-red-400'
-                  }`}
-                >
-                  {fragmentMessage}
-                </div>
-              )}
             </div>
           )}
 
@@ -362,11 +391,10 @@ export const App = () => {
             </div>
           )}
 
-          {/* Success messages */}
-          {fragmentSolved && locationSolved && (
-            <div className="text-center mt-4">
-              <p className="text-green-400 font-semibold">🧩 Fragment cracked: {fragmentInput}</p>
-              <p className="text-blue-400 font-semibold">🏙️ Location solved: {locationInput}</p>
+          {/* SUCCESS MESSAGE */}
+          {successMessage && (
+            <div className="text-center mt-4 whitespace-pre-line">
+              <p className="text-green-400 font-semibold">{successMessage}</p>
             </div>
           )}
         </div>
